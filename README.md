@@ -138,7 +138,7 @@ flowchart TD
     E --> G["Generate Client CSR<br/>CN=test-client"]
     F --> H["Sign 3 server certs<br/>good / wrong / noeku"]
     G --> I["Sign 3 client certs<br/>good / wrong / noeku"]
-    H --> J["Write nginx.conf<br/>+ docker-compose.yml"]
+    H --> J["Write nginx.conf<br/>+ start/stop scripts"]
     I --> J
     J --> K[Done — Ready to test]
 
@@ -174,7 +174,8 @@ mtls-lab/
 │   ├── client_wrong.pem     # ❌ EKU: serverAuth (wrong)
 │   └── client_noeku.pem     # ❌ No EKU
 ├── nginx.conf               # NGINX mTLS config
-└── docker-compose.yml       # Docker Compose for NGINX
+├── start-nginx.sh           # Start NGINX container (accepts optional server cert arg)
+└── stop-nginx.sh            # Stop and remove NGINX container
 ```
 
 ---
@@ -182,7 +183,7 @@ mtls-lab/
 ## Prerequisites
 
 - **OpenSSL** (1.1+ or 3.x)
-- **Docker** & **Docker Compose** (for the NGINX server)
+- **Docker** (for the NGINX server)
 - **curl** (for testing)
 
 ---
@@ -200,7 +201,7 @@ chmod +x generate-certs.sh
 
 ```bash
 cd mtls-lab
-docker compose up -d
+./start-nginx.sh
 ```
 
 ### 3. Run the automated test matrix
@@ -243,8 +244,8 @@ curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
   --cert client/client_good.pem \
   --key client/client_key.pem
 
-# ❌ FAIL — swap server cert to server_wrong.pem in docker-compose.yml, then:
-docker compose down && docker compose up -d
+# ❌ FAIL — restart with wrong server cert:
+./start-nginx.sh server/server_wrong.pem
 curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
   --cert client/client_good.pem \
   --key client/client_key.pem
@@ -254,7 +255,7 @@ curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
 ### 6. Clean up
 
 ```bash
-docker compose down
+./stop-nginx.sh
 cd ..
 rm -rf mtls-lab
 ```
@@ -328,7 +329,7 @@ openssl verify -CAfile mtls-lab/ca/ca_cert.pem mtls-lab/client/client_good.pem
 | `SSL: error:... alert handshake failure` | Client cert has EKU but it doesn't include `clientAuth` | Use `client_good.pem` or `client_noeku.pem` |
 | `curl: (60) SSL certificate problem` | Server cert has wrong EKU (only when NOT using `-k`) | Use `server_good.pem` or `server_noeku.pem`, or add `-k` |
 | Client cert with no EKU is accepted | OpenSSL treats missing EKU as unrestricted | This is by design — add explicit EKU to restrict usage |
-| `connection refused` on port 8443 | NGINX not running | Run `docker compose up -d` inside `mtls-lab/` |
+| `connection refused` on port 8443 | NGINX not running | Run `./start-nginx.sh` inside `mtls-lab/` |
 
 ---
 

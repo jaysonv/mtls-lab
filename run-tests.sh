@@ -7,8 +7,8 @@
 #
 # Usage:
 #   ./generate-certs.sh          # generate certs first
-#   cd mtls-lab && docker compose up -d  # start NGINX
-#   cd .. && ./run-tests.sh      # run tests
+#   cd mtls-lab && ./start-nginx.sh       # start NGINX
+#   cd .. && ./run-tests.sh               # run tests
 #
 set -e
 
@@ -26,7 +26,7 @@ fi
 # Check NGINX is reachable
 if ! curl -sk --max-time 3 "$URL" --cert "$MTLS_DIR/client/client_good.pem" --key "$MTLS_DIR/client/client_key.pem" >/dev/null 2>&1; then
     echo "ERROR: NGINX not reachable on $URL"
-    echo "  Run: cd $MTLS_DIR && docker compose up -d"
+    echo "  Run: cd $MTLS_DIR && ./start-nginx.sh"
     exit 1
 fi
 
@@ -48,20 +48,14 @@ fail_count=0
 # Function: swap server cert and restart NGINX
 swap_server_cert() {
     local cert_name="$1"
-    cat > "$MTLS_DIR/docker-compose.yml" <<EOF
-version: "3.9"
-services:
-  nginx-mtls:
-    image: nginx:alpine
-    ports:
-      - "${PORT}:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./server/${cert_name}.pem:/etc/nginx/certs/server_cert.pem:ro
-      - ./server/server_key.pem:/etc/nginx/certs/server_key.pem:ro
-      - ./ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro
-EOF
-    (cd "$MTLS_DIR" && docker compose up -d --force-recreate 2>/dev/null)
+    docker rm -f mtls-nginx 2>/dev/null
+    docker run -d --name mtls-nginx \
+        -p "${PORT}:443" \
+        -v "$(cd "$MTLS_DIR" && pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+        -v "$(cd "$MTLS_DIR" && pwd)/server/${cert_name}.pem:/etc/nginx/certs/server_cert.pem:ro" \
+        -v "$(cd "$MTLS_DIR" && pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro" \
+        -v "$(cd "$MTLS_DIR" && pwd)/ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro" \
+        nginx:alpine >/dev/null
     sleep 2  # wait for NGINX to start
 }
 
@@ -134,7 +128,9 @@ echo -e "  ${YELLOW}Rule 3:${NC} No EKU extension at all                  → ${
 echo -e "  ${YELLOW}Rule 4:${NC} curl -k skips ALL server cert validation"
 echo ""
 
-# Restore server_good as default
+# Restore server_good as default and clean up
 swap_server_cert "server_good"
 echo "  (Restored server_good.pem as default server cert)"
+echo ""
+echo "  To stop NGINX:  cd $MTLS_DIR && ./stop-nginx.sh"
 echo ""

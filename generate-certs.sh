@@ -164,21 +164,29 @@ server {
 EOF
 
 ########################################
-# STEP 9 — WRITE DOCKER COMPOSE
+# STEP 9 — WRITE START/STOP SCRIPTS
 ########################################
-cat > docker-compose.yml <<'EOF'
-version: "3.9"
-services:
-  nginx-mtls:
-    image: nginx:alpine
-    ports:
-      - "8443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./server/server_good.pem:/etc/nginx/certs/server_cert.pem:ro
-      - ./server/server_key.pem:/etc/nginx/certs/server_key.pem:ro
-      - ./ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro
-EOF
+cat > start-nginx.sh <<'SCRIPT'
+#!/bin/bash
+SERVER_CERT="${1:-server/server_good.pem}"
+echo "Starting NGINX with server cert: $SERVER_CERT"
+docker rm -f mtls-nginx 2>/dev/null
+docker run -d --name mtls-nginx \
+  -p 8443:443 \
+  -v "$(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+  -v "$(pwd)/${SERVER_CERT}:/etc/nginx/certs/server_cert.pem:ro" \
+  -v "$(pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro" \
+  -v "$(pwd)/ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro" \
+  nginx:alpine
+SCRIPT
+chmod +x start-nginx.sh
+
+cat > stop-nginx.sh <<'SCRIPT'
+#!/bin/bash
+docker rm -f mtls-nginx 2>/dev/null
+echo "NGINX stopped."
+SCRIPT
+chmod +x stop-nginx.sh
 
 ########################################
 # STEP 10 — PRINT TEST COMMANDS
@@ -203,7 +211,13 @@ echo "  • EKU absent (no extension at all)         → ACCEPTED (unrestricted)
 echo "  • curl -k skips ALL server cert validation"
 echo ""
 echo "===== START NGINX ====="
-echo "  docker compose up -d"
+echo "  cd mtls-lab && ./start-nginx.sh"
+echo ""
+echo "  Or with a specific server cert:"
+echo "  ./start-nginx.sh server/server_wrong.pem"
+echo ""
+echo "===== STOP NGINX ====="
+echo "  ./stop-nginx.sh"
 echo ""
 echo "===== RUN ALL TESTS ====="
 echo "  cd .. && ./run-tests.sh"
