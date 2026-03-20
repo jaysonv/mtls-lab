@@ -8,12 +8,7 @@ A self-contained lab for generating and testing **mutual TLS (mTLS)** certificat
 
 This lab creates a full PKI (Root CA → Server Certs → Client Certs) and an NGINX reverse proxy that enforces client-certificate verification. It generates **correct** and **deliberately broken** certificates so you can observe exactly how mTLS handshakes succeed or fail based on EKU settings.
 
-### Key Findings
-
-Testing reveals two important behaviors that are often misunderstood:
-
-1. **`curl -k` disables ALL server-side validation** — including EKU checks. To properly test server cert EKU, you must use `--cacert` instead of `-k`.
-2. **No EKU ≠ restricted** — per the X.509 standard ([RFC 5280 §4.2.1.12](https://datatracker.ietf.org/doc/html/rfc5280#section-4.2.1.12)), a certificate **without** an EKU extension is considered valid for **any** purpose. Only an explicit wrong EKU causes rejection.
+> **Key Discovery:** EKU enforcement is not as straightforward as it seems. OpenSSL only rejects a certificate if the EKU extension **is present but does not include the required purpose**. A certificate with **no EKU at all** is treated as unrestricted and accepted for any purpose. Additionally, `curl -k` disables all server-side certificate checks, so server EKU is only validated when strict verification is enabled.
 
 ---
 
@@ -28,13 +23,13 @@ graph TB
     subgraph "Server Certificates"
         SG["server_good.pem<br/>EKU: serverAuth ✅"]
         SW["server_wrong.pem<br/>EKU: clientAuth ❌"]
-        SN["server_noeku.pem<br/>EKU: (none) ⚠️ treated as any"]
+        SN["server_noeku.pem<br/>EKU: (none) ❌"]
     end
 
     subgraph "Client Certificates"
         CG["client_good.pem<br/>EKU: clientAuth ✅"]
         CW["client_wrong.pem<br/>EKU: serverAuth ❌"]
-        CN["client_noeku.pem<br/>EKU: (none) ⚠️ treated as any"]
+        CN["client_noeku.pem<br/>EKU: (none) ❌"]
     end
 
     CA -->|signs| SG
@@ -49,7 +44,7 @@ graph TB
 
 ## mTLS Handshake Flow
 
-### With `curl -k` (insecure — skips server validation)
+### With `curl -k` (insecure mode — server cert NOT validated)
 
 ```mermaid
 sequenceDiagram
@@ -58,17 +53,17 @@ sequenceDiagram
 
     C->>N: 1. ClientHello
     N->>C: 2. ServerHello + Server Certificate
-    Note over C: 3. curl -k SKIPS all validation<br/>Server EKU is IGNORED
+    Note over C: 3. curl -k SKIPS server<br/>cert validation entirely
     N->>C: 4. CertificateRequest
     C->>N: 5. Client Certificate
-    Note over N: 6. NGINX/OpenSSL checks client cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU includes clientAuth OR no EKU?<br/>❌ EKU is serverAuth only? → REJECT
+    Note over N: 6. NGINX/OpenSSL validates client cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU present? If yes → must include clientAuth<br/>✅ No EKU? → allowed (unrestricted)
     C->>N: 7. Finished
     N->>C: 8. Finished
     C->>N: 9. GET /
     N->>C: 10. 200 "mTLS OK"
 ```
 
-### With `--cacert` (secure — validates server cert properly)
+### Without `-k` (strict mode — full validation on both sides)
 
 ```mermaid
 sequenceDiagram
@@ -77,10 +72,10 @@ sequenceDiagram
 
     C->>N: 1. ClientHello
     N->>C: 2. ServerHello + Server Certificate
-    Note over C: 3. curl validates server cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU includes serverAuth OR no EKU?<br/>❌ EKU is clientAuth only? → REJECT
+    Note over C: 3. Client validates server cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU present? If yes → must include serverAuth<br/>✅ No EKU? → allowed (unrestricted)
     N->>C: 4. CertificateRequest
     C->>N: 5. Client Certificate
-    Note over N: 6. NGINX/OpenSSL checks client cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU includes clientAuth OR no EKU?<br/>❌ EKU is serverAuth only? → REJECT
+    Note over N: 6. NGINX/OpenSSL validates client cert:<br/>✅ Signed by trusted CA?<br/>✅ EKU present? If yes → must include clientAuth<br/>✅ No EKU? → allowed (unrestricted)
     C->>N: 7. Finished
     N->>C: 8. Finished
     C->>N: 9. GET /
@@ -89,67 +84,45 @@ sequenceDiagram
 
 ---
 
-## Test Results
+## Test Matrix — Verified Results
 
-### Test A: Using `curl -k` (server EKU not validated)
+### With `curl -k` (insecure — skips server cert validation)
 
-Since `curl -k` skips all server certificate validation, only the **client cert EKU** matters.
+Since `curl -k` disables server certificate checks, **only the client cert EKU matters**.
 
 ```mermaid
 graph LR
-    subgraph "curl -k — Server EKU irrelevant"
-        direction TB
-        subgraph "Any server cert"
-            T1["+ client_good.pem<br/>(clientAuth)"]:::pass
-            T2["+ client_wrong.pem<br/>(serverAuth)"]:::fail
-            T3["+ client_noeku.pem<br/>(no EKU)"]:::pass
-        end
+    subgraph "Any Server Cert (curl -k skips server validation)"
+        T1["+ client_good.pem<br/>(clientAuth)<br/>✅ mTLS OK"]:::pass
+        T2["+ client_wrong.pem<br/>(serverAuth)<br/>❌ Handshake Failure"]:::fail
+        T3["+ client_noeku.pem<br/>(no EKU)<br/>✅ mTLS OK"]:::pass
     end
 
     classDef pass fill:#2d6a2d,stroke:#1a3d1a,color:#fff
     classDef fail fill:#8b1a1a,stroke:#5c1010,color:#fff
 ```
 
-| Server Cert | Client Cert | Result | Why |
+| Server Cert | Client Cert | Result (`curl -k`) | Why |
 |---|---|---|---|
 | `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Correct EKU |
-| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Wrong EKU — explicitly `serverAuth`, not `clientAuth` |
-| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted = valid for any purpose |
-| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | `-k` skips server validation; client EKU correct |
-| `server_wrong.pem` (clientAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Client EKU wrong — server EKU irrelevant with `-k` |
-| `server_wrong.pem` (clientAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | `-k` skips server; no EKU = unrestricted |
-| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | `-k` skips server; client EKU correct |
-| `server_noeku.pem` (no EKU) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Client EKU wrong |
-| `server_noeku.pem` (no EKU) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | Both unrestricted |
+| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
+| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
+| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Server not checked (`-k`) |
+| `server_wrong.pem` (clientAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
+| `server_wrong.pem` (clientAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
+| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Server not checked (`-k`) |
+| `server_noeku.pem` (no EKU) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
+| `server_noeku.pem` (no EKU) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
 
-### Test B: Using `--cacert` (proper server EKU validation)
+### With `--cacert` (strict — validates server cert too)
 
-Removing `-k` and using `--cacert ca/ca_cert.pem` enables **both** server and client EKU checks.
-
-| Server Cert | Client Cert | Result | Why |
+| Server Cert | Client Cert | Result (strict) | Why |
 |---|---|---|---|
 | `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Both EKUs correct |
-| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Client: wrong EKU |
-| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
-| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **❌ curl rejects server** | Server: wrong EKU |
-| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Server no EKU = unrestricted |
-
----
-
-## EKU Decision Logic
-
-```mermaid
-flowchart TD
-    A["Certificate presented<br/>during TLS handshake"] --> B{"Does cert have<br/>EKU extension?"}
-    B -->|No| C["✅ ACCEPTED<br/>No EKU = valid for any purpose<br/>(RFC 5280 §4.2.1.12)"]
-    B -->|Yes| D{"Does EKU include<br/>required purpose?"}
-    D -->|"Server cert needs serverAuth<br/>Client cert needs clientAuth"| E["✅ ACCEPTED"]
-    D -->|"Has wrong EKU<br/>(e.g. serverAuth on client cert)"| F["❌ REJECTED<br/>SSL handshake failure"]
-
-    style C fill:#2d6a2d,stroke:#1a3d1a,color:#fff
-    style E fill:#2d6a2d,stroke:#1a3d1a,color:#fff
-    style F fill:#8b1a1a,stroke:#5c1010,color:#fff
-```
+| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Client EKU wrong |
+| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No client EKU = unrestricted |
+| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **❌ Server cert rejected** | Server EKU wrong |
+| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | No server EKU = unrestricted |
 
 ---
 
@@ -230,57 +203,55 @@ cd mtls-lab
 docker compose up -d
 ```
 
-### 3. Test client cert EKU (using `curl -k`)
-
-With `-k`, curl skips server cert validation — only client cert EKU matters.
+### 3. Run the automated test matrix
 
 ```bash
-# ✅ PASS — client cert has correct EKU (clientAuth)
+chmod +x run-tests.sh
+./run-tests.sh
+```
+
+This runs all 9 combinations of server × client certs and prints a results table.
+
+### 4. Manual testing
+
+```bash
+cd mtls-lab
+
+# ✅ PASS — correct client cert (EKU: clientAuth)
 curl -vk https://localhost:8443 \
   --cert client/client_good.pem \
   --key client/client_key.pem
 
-# ❌ FAIL — client cert has wrong EKU (serverAuth instead of clientAuth)
+# ❌ FAIL — client cert has WRONG EKU (serverAuth instead of clientAuth)
 curl -vk https://localhost:8443 \
   --cert client/client_wrong.pem \
   --key client/client_key.pem
 
-# ✅ PASS — client cert has no EKU (unrestricted = accepted)
+# ✅ PASS — client cert has NO EKU (treated as unrestricted!)
 curl -vk https://localhost:8443 \
   --cert client/client_noeku.pem \
   --key client/client_key.pem
 ```
 
-### 4. Test server cert EKU (using `--cacert`)
+### 5. Test with strict server cert validation
 
-Remove `-k` and use `--cacert` so curl properly validates the server certificate.
+Remove `-k` and use `--cacert` to enable server cert verification:
 
 ```bash
-# ✅ PASS — server cert has correct EKU (serverAuth)
+# ✅ PASS — server has correct serverAuth EKU
 curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
   --cert client/client_good.pem \
   --key client/client_key.pem
 
-# To test wrong server EKU, swap the cert in docker-compose.yml:
-#   server_good.pem → server_wrong.pem
+# ❌ FAIL — swap server cert to server_wrong.pem in docker-compose.yml, then:
 docker compose down && docker compose up -d
-
-# ❌ FAIL — server cert has wrong EKU (clientAuth), curl rejects it
 curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
   --cert client/client_good.pem \
   --key client/client_key.pem
-
-# To test no-EKU server cert, swap to server_noeku.pem:
-#   server_wrong.pem → server_noeku.pem
-docker compose down && docker compose up -d
-
-# ✅ PASS — server cert has no EKU (unrestricted = accepted)
-curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
-  --cert client/client_good.pem \
-  --key client/client_key.pem
+# curl rejects the server cert (EKU is clientAuth, not serverAuth)
 ```
 
-### 5. Clean up
+### 6. Clean up
 
 ```bash
 docker compose down
@@ -299,7 +270,6 @@ Only the **server** presents a certificate. The client verifies it.
 Both the **server** and **client** present certificates. Each side verifies the other.
 
 ### Extended Key Usage (EKU)
-
 The EKU extension restricts what a certificate can be used for:
 
 | EKU Value | OID | Purpose |
@@ -307,18 +277,31 @@ The EKU extension restricts what a certificate can be used for:
 | `serverAuth` | 1.3.6.1.5.5.7.3.1 | Identifies a TLS **server** |
 | `clientAuth` | 1.3.6.1.5.5.7.3.2 | Identifies a TLS **client** |
 
-### EKU Validation Rules
+### EKU Validation Rules (Critical!)
 
-| Cert has... | Checked against... | Result |
+OpenSSL's EKU enforcement follows this logic:
+
+```mermaid
+flowchart TD
+    A["Certificate presented"] --> B{"Does cert have<br/>EKU extension?"}
+    B -->|No| C["✅ ACCEPT<br/>No EKU = unrestricted<br/>(allowed for any purpose)"]
+    B -->|Yes| D{"Does EKU include<br/>required purpose?"}
+    D -->|"Yes (e.g. clientAuth)"| E["✅ ACCEPT"]
+    D -->|"No (e.g. serverAuth only)"| F["❌ REJECT<br/>EKU explicitly excludes<br/>this purpose"]
+
+    style C fill:#2d6a2d,stroke:#1a3d1a,color:#fff
+    style E fill:#2d6a2d,stroke:#1a3d1a,color:#fff
+    style F fill:#8b1a1a,stroke:#5c1010,color:#fff
+```
+
+**Key insight:** A cert with **no EKU** is MORE permissive than one with the wrong EKU. The EKU extension, when present, acts as a whitelist — if the required purpose isn't listed, the cert is rejected.
+
+### Impact of `curl -k`
+
+| Flag | Server cert verified? | Server EKU checked? |
 |---|---|---|
-| `clientAuth` EKU | Needs `clientAuth` (client) | **✅ Accepted** — correct EKU |
-| `serverAuth` EKU | Needs `clientAuth` (client) | **❌ Rejected** — explicit wrong purpose |
-| **No EKU at all** | Needs `clientAuth` (client) | **✅ Accepted** — no restriction = any purpose |
-| `serverAuth` EKU | Needs `serverAuth` (server) | **✅ Accepted** — correct EKU |
-| `clientAuth` EKU | Needs `serverAuth` (server) | **❌ Rejected** — explicit wrong purpose |
-| **No EKU at all** | Needs `serverAuth` (server) | **✅ Accepted** — no restriction = any purpose |
-
-> **Important:** `curl -k` skips **all** server certificate validation (CA trust, hostname, AND EKU). To test server cert EKU rejection, you must use `--cacert ca_cert.pem` instead.
+| `curl -k` (insecure) | ❌ No | ❌ No |
+| `curl --cacert ca.pem` (strict) | ✅ Yes | ✅ Yes |
 
 ---
 
@@ -342,10 +325,9 @@ openssl verify -CAfile mtls-lab/ca/ca_cert.pem mtls-lab/client/client_good.pem
 | Problem | Cause | Fix |
 |---|---|---|
 | `There is already a certificate for /CN=...` | CA enforces unique subjects | Ensure `unique_subject = no` in `index.txt.attr` (already included in script) |
-| `SSL: error:... alert handshake failure` | Client cert has explicit wrong EKU (`serverAuth`) | Use `client_good.pem` (clientAuth) or `client_noeku.pem` (unrestricted) |
-| `curl: (60) SSL certificate problem` | Server cert has wrong EKU **and** you used `--cacert` | Use `server_good.pem` or `server_noeku.pem` |
-| Server wrong EKU not rejected | You used `curl -k` which skips all server validation | Use `--cacert ca/ca_cert.pem` instead of `-k` |
-| No-EKU cert accepted (unexpected) | X.509 spec: no EKU = valid for any purpose | This is correct behavior per RFC 5280 |
+| `SSL: error:... alert handshake failure` | Client cert has EKU but it doesn't include `clientAuth` | Use `client_good.pem` or `client_noeku.pem` |
+| `curl: (60) SSL certificate problem` | Server cert has wrong EKU (only when NOT using `-k`) | Use `server_good.pem` or `server_noeku.pem`, or add `-k` |
+| Client cert with no EKU is accepted | OpenSSL treats missing EKU as unrestricted | This is by design — add explicit EKU to restrict usage |
 | `connection refused` on port 8443 | NGINX not running | Run `docker compose up -d` inside `mtls-lab/` |
 
 ---
