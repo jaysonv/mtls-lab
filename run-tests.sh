@@ -7,7 +7,12 @@
 #
 # Usage:
 #   ./generate-certs.sh          # generate certs first
-#   cd mtls-lab && ./start-nginx.sh       # start NGINX
+#   cd mtls-lab && docker run -d --name mtls-nginx -p 8443:443 \   # start NGINX
+#     -v $(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+#     -v $(pwd)/server/server_good.pem:/etc/nginx/certs/server_cert.pem:ro \
+#     -v $(pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro \
+#     -v $(pwd)/ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro \
+#     nginx:alpine
 #   cd .. && ./run-tests.sh               # run tests
 #
 set -e
@@ -26,7 +31,12 @@ fi
 # Check NGINX is reachable
 if ! curl -sk --max-time 3 "$URL" --cert "$MTLS_DIR/client/client_good.pem" --key "$MTLS_DIR/client/client_key.pem" >/dev/null 2>&1; then
     echo "ERROR: NGINX not reachable on $URL"
-    echo "  Run: cd $MTLS_DIR && ./start-nginx.sh"
+    echo "  Run: cd $MTLS_DIR && docker run -d --name mtls-nginx -p 8443:443 \\"
+    echo "    -v \$(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro \\"
+    echo "    -v \$(pwd)/server/server_good.pem:/etc/nginx/certs/server_cert.pem:ro \\"
+    echo "    -v \$(pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro \\"
+    echo "    -v \$(pwd)/ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro \\"
+    echo "    nginx:alpine"
     exit 1
 fi
 
@@ -132,5 +142,5 @@ echo ""
 swap_server_cert "server_good"
 echo "  (Restored server_good.pem as default server cert)"
 echo ""
-echo "  To stop NGINX:  cd $MTLS_DIR && ./stop-nginx.sh"
+echo "  To stop NGINX:  docker rm -f mtls-nginx"
 echo ""
