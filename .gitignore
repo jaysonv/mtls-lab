@@ -1,0 +1,16 @@
+# Generated certificate files
+mtls-lab/
+*.pem
+*.csr
+
+# CA database files
+index.txt
+index.txt.*
+serial
+serial.*
+certs/
+newcerts/
+
+# OS files
+.DS_Store
+Thumbs.db
