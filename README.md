@@ -138,7 +138,7 @@ flowchart TD
     E --> G["Generate Client CSR<br/>CN=test-client"]
     F --> H["Sign 3 server certs<br/>good / wrong / noeku"]
     G --> I["Sign 3 client certs<br/>good / wrong / noeku"]
-    H --> J["Write nginx.conf"]
+    H --> J["Write nginx.conf<br/>+ helper scripts"]
     I --> J
     J --> K[Done — Ready to test]
 
@@ -174,6 +174,9 @@ mtls-lab/
 │   ├── client_wrong.pem     # ❌ EKU: serverAuth (wrong)
 │   └── client_noeku.pem     # ❌ No EKU
 └── nginx.conf               # NGINX mTLS config
+├── start-nginx.sh           # Helper: start NGINX (accepts optional server cert arg)
+├── stop-nginx.sh            # Helper: stop and remove NGINX container
+└── run-tests.sh             # Helper: run all 9 test combinations
 ```
 
 ---
@@ -197,6 +200,20 @@ chmod +x generate-certs.sh
 
 ### 2. Start the NGINX mTLS server
 
+**Option A — Using the generated script:**
+
+```bash
+cd mtls-lab
+./start-nginx.sh
+```
+
+To use a different server cert:
+```bash
+./start-nginx.sh server/server_wrong.pem
+```
+
+**Option B — Manual docker command:**
+
 ```bash
 cd mtls-lab
 docker run -d --name mtls-nginx -p 8443:443 \
@@ -209,12 +226,20 @@ docker run -d --name mtls-nginx -p 8443:443 \
 
 ### 3. Run the automated test matrix
 
+**Option A — Using the generated script (from inside mtls-lab/):**
+
+```bash
+./run-tests.sh
+```
+
+**Option B — Using the repo-level script (from repo root):**
+
 ```bash
 chmod +x run-tests.sh
 ./run-tests.sh
 ```
 
-This runs all 9 combinations of server × client certs and prints a results table.
+Both run all 9 combinations of server × client certs and print a results table.
 
 ### 4. Manual testing
 
@@ -248,6 +273,8 @@ curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
   --key client/client_key.pem
 
 # ❌ FAIL — restart with wrong server cert:
+# Option A: ./start-nginx.sh server/server_wrong.pem
+# Option B:
 docker rm -f mtls-nginx
 docker run -d --name mtls-nginx -p 8443:443 \
   -v $(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
@@ -265,7 +292,11 @@ curl -v --cacert ca/ca_cert.pem https://localhost:8443 \
 ### 6. Clean up
 
 ```bash
+# Option A:
+./stop-nginx.sh
+# Option B:
 docker rm -f mtls-nginx
+
 cd ..
 rm -rf mtls-lab
 ```
@@ -339,7 +370,7 @@ openssl verify -CAfile mtls-lab/ca/ca_cert.pem mtls-lab/client/client_good.pem
 | `SSL: error:... alert handshake failure` | Client cert has EKU but it doesn't include `clientAuth` | Use `client_good.pem` or `client_noeku.pem` |
 | `curl: (60) SSL certificate problem` | Server cert has wrong EKU (only when NOT using `-k`) | Use `server_good.pem` or `server_noeku.pem`, or add `-k` |
 | Client cert with no EKU is accepted | OpenSSL treats missing EKU as unrestricted | This is by design — add explicit EKU to restrict usage |
-| `connection refused` on port 8443 | NGINX not running | Run the `docker run` command from Quick Start step 2 |
+| `connection refused` on port 8443 | NGINX not running | Run `./start-nginx.sh` or the `docker run` command from Quick Start step 2 |
 
 ---
 

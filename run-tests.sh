@@ -5,15 +5,13 @@
 # Runs all 9 combinations of server × client certificates against NGINX
 # and prints a results table showing which pass and which fail.
 #
-# Usage:
+# Usage (from repo root):
 #   ./generate-certs.sh          # generate certs first
-#   cd mtls-lab && docker run -d --name mtls-nginx -p 8443:443 \   # start NGINX
-#     -v $(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
-#     -v $(pwd)/server/server_good.pem:/etc/nginx/certs/server_cert.pem:ro \
-#     -v $(pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro \
-#     -v $(pwd)/ca/ca_cert.pem:/etc/nginx/certs/ca_cert.pem:ro \
-#     nginx:alpine
-#   cd .. && ./run-tests.sh               # run tests
+#   cd mtls-lab && ./start-nginx.sh    # Option A: use script
+#   # OR: docker run -d --name mtls-nginx -p 8443:443 ...  # Option B: manual
+#   cd .. && ./run-tests.sh            # run tests
+#
+# A copy of this script is also generated inside mtls-lab/ by generate-certs.sh
 #
 set -e
 
@@ -31,7 +29,8 @@ fi
 # Check NGINX is reachable
 if ! curl -sk --max-time 3 "$URL" --cert "$MTLS_DIR/client/client_good.pem" --key "$MTLS_DIR/client/client_key.pem" >/dev/null 2>&1; then
     echo "ERROR: NGINX not reachable on $URL"
-    echo "  Run: cd $MTLS_DIR && docker run -d --name mtls-nginx -p 8443:443 \\"
+    echo "  Run: cd $MTLS_DIR && ./start-nginx.sh"
+    echo "  Or manually: docker run -d --name mtls-nginx -p 8443:443 \\"
     echo "    -v \$(pwd)/nginx.conf:/etc/nginx/conf.d/default.conf:ro \\"
     echo "    -v \$(pwd)/server/server_good.pem:/etc/nginx/certs/server_cert.pem:ro \\"
     echo "    -v \$(pwd)/server/server_key.pem:/etc/nginx/certs/server_key.pem:ro \\"
@@ -142,5 +141,5 @@ echo ""
 swap_server_cert "server_good"
 echo "  (Restored server_good.pem as default server cert)"
 echo ""
-echo "  To stop NGINX:  docker rm -f mtls-nginx"
+echo "  To stop NGINX:  ./stop-nginx.sh  or  docker rm -f mtls-nginx"
 echo ""
