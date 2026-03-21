@@ -1,18 +1,18 @@
-# mTLS Lab — Mutual TLS Testing Environment
+# :lock: mTLS Lab — Mutual TLS Testing Environment
 
 A self-contained lab for generating and testing **mutual TLS (mTLS)** certificates with various Extended Key Usage (EKU) combinations. Uses OpenSSL for certificate generation and NGINX as the mTLS-enforcing server.
 
 ---
 
-## Overview
+## :book: Overview
 
 This lab creates a full PKI (Root CA → Server Certs → Client Certs) and an NGINX reverse proxy that enforces client-certificate verification. It generates **correct** and **deliberately broken** certificates so you can observe exactly how mTLS handshakes succeed or fail based on EKU settings.
 
-> **Key Discovery:** EKU enforcement is not as straightforward as it seems. OpenSSL only rejects a certificate if the EKU extension **is present but does not include the required purpose**. A certificate with **no EKU at all** is treated as unrestricted and accepted for any purpose. Additionally, `curl -k` disables all server-side certificate checks, so server EKU is only validated when strict verification is enabled.
+> :bulb: **Key Discovery:** EKU enforcement is not as straightforward as it seems. OpenSSL only rejects a certificate if the EKU extension **is present but does not include the required purpose**. A certificate with **no EKU at all** is treated as unrestricted and accepted for any purpose. Additionally, `curl -k` disables all server-side certificate checks, so server EKU is only validated when strict verification is enabled.
 
 ---
 
-## Architecture
+## :building_construction: Architecture
 
 ```mermaid
 graph TB
@@ -42,7 +42,7 @@ graph TB
 
 ---
 
-## mTLS Handshake Flow
+## :arrows_counterclockwise: mTLS Handshake Flow
 
 ### With `curl -k` (insecure mode — server cert NOT validated)
 
@@ -84,7 +84,7 @@ sequenceDiagram
 
 ---
 
-## Test Matrix — Verified Results
+## :clipboard: Test Matrix — Verified Results
 
 ### With `curl -k` (insecure — skips server cert validation)
 
@@ -104,29 +104,29 @@ graph LR
 
 | Server Cert | Client Cert | Result (`curl -k`) | Why |
 |---|---|---|---|
-| `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Correct EKU |
-| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
-| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
-| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Server not checked (`-k`) |
-| `server_wrong.pem` (clientAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
-| `server_wrong.pem` (clientAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
-| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Server not checked (`-k`) |
-| `server_noeku.pem` (no EKU) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | EKU present but wrong |
-| `server_noeku.pem` (no EKU) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No EKU = unrestricted |
+| `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | Correct EKU |
+| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | :x: **Handshake failure** | EKU present but wrong |
+| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | No EKU = unrestricted |
+| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | Server not checked (`-k`) |
+| `server_wrong.pem` (clientAuth) | `client_wrong.pem` (serverAuth) | :x: **Handshake failure** | EKU present but wrong |
+| `server_wrong.pem` (clientAuth) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | No EKU = unrestricted |
+| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | Server not checked (`-k`) |
+| `server_noeku.pem` (no EKU) | `client_wrong.pem` (serverAuth) | :x: **Handshake failure** | EKU present but wrong |
+| `server_noeku.pem` (no EKU) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | No EKU = unrestricted |
 
 ### With `--cacert` (strict — validates server cert too)
 
 | Server Cert | Client Cert | Result (strict) | Why |
 |---|---|---|---|
-| `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | Both EKUs correct |
-| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | **❌ Handshake failure** | Client EKU wrong |
-| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | **✅ mTLS OK** | No client EKU = unrestricted |
-| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | **❌ Server cert rejected** | Server EKU wrong |
-| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | **✅ mTLS OK** | No server EKU = unrestricted |
+| `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | Both EKUs correct |
+| `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | :x: **Handshake failure** | Client EKU wrong |
+| `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | No client EKU = unrestricted |
+| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | :x: **Server cert rejected** | Server EKU wrong |
+| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | No server EKU = unrestricted |
 
 ---
 
-## Certificate Generation Flow
+## :gear: Certificate Generation Flow
 
 ```mermaid
 flowchart TD
@@ -149,7 +149,7 @@ flowchart TD
 
 ---
 
-## Directory Structure (after running the script)
+## :file_folder: Directory Structure (after running the script)
 
 ```
 mtls-lab/
@@ -181,7 +181,7 @@ mtls-lab/
 
 ---
 
-## Prerequisites
+## :pushpin: Prerequisites
 
 - **OpenSSL** (1.1+ or 3.x)
 - **Docker** (for the NGINX server)
@@ -189,7 +189,7 @@ mtls-lab/
 
 ---
 
-## Quick Start
+## :rocket: Quick Start
 
 ### 1. Generate all certificates
 
@@ -303,7 +303,7 @@ rm -rf mtls-lab
 
 ---
 
-## How mTLS Works
+## :closed_lock_with_key: How mTLS Works
 
 ### Standard TLS (one-way)
 Only the **server** presents a certificate. The client verifies it.
@@ -319,7 +319,7 @@ The EKU extension restricts what a certificate can be used for:
 | `serverAuth` | 1.3.6.1.5.5.7.3.1 | Identifies a TLS **server** |
 | `clientAuth` | 1.3.6.1.5.5.7.3.2 | Identifies a TLS **client** |
 
-### EKU Validation Rules (Critical!)
+### :key: EKU Validation Rules (Critical!)
 
 OpenSSL's EKU enforcement follows this logic:
 
@@ -336,18 +336,18 @@ flowchart TD
     style F fill:#8b1a1a,stroke:#5c1010,color:#fff
 ```
 
-**Key insight:** A cert with **no EKU** is MORE permissive than one with the wrong EKU. The EKU extension, when present, acts as a whitelist — if the required purpose isn't listed, the cert is rejected.
+**:bulb: Key insight:** A cert with **no EKU** is MORE permissive than one with the wrong EKU. The EKU extension, when present, acts as a whitelist — if the required purpose isn't listed, the cert is rejected.
 
-### Impact of `curl -k`
+### :warning: Impact of `curl -k`
 
 | Flag | Server cert verified? | Server EKU checked? |
 |---|---|---|
-| `curl -k` (insecure) | ❌ No | ❌ No |
-| `curl --cacert ca.pem` (strict) | ✅ Yes | ✅ Yes |
+| `curl -k` (insecure) | :x: No | :x: No |
+| `curl --cacert ca.pem` (strict) | :white_check_mark: Yes | :white_check_mark: Yes |
 
 ---
 
-## Inspecting Certificates
+## :mag: Inspecting Certificates
 
 ```bash
 # View full certificate details
@@ -362,7 +362,7 @@ openssl verify -CAfile mtls-lab/ca/ca_cert.pem mtls-lab/client/client_good.pem
 
 ---
 
-## Troubleshooting
+## :wrench: Troubleshooting
 
 | Problem | Cause | Fix |
 |---|---|---|
@@ -374,6 +374,6 @@ openssl verify -CAfile mtls-lab/ca/ca_cert.pem mtls-lab/client/client_good.pem
 
 ---
 
-## License
+## :page_facing_up: License
 
 MIT
