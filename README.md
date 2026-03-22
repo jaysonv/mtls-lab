@@ -121,8 +121,12 @@ graph LR
 | `server_good.pem` (serverAuth) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | Both EKUs correct |
 | `server_good.pem` (serverAuth) | `client_wrong.pem` (serverAuth) | :x: **Handshake failure** | Client EKU wrong |
 | `server_good.pem` (serverAuth) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | No client EKU = unrestricted |
-| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | :x: **Server cert rejected** | Server EKU wrong |
-| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | No server EKU = unrestricted |
+| `server_wrong.pem` (clientAuth) | `client_good.pem` (clientAuth) | :x: **Unsuitable certificate purpose** | Server EKU wrong (`clientAuth` not `serverAuth`) |
+| `server_wrong.pem` (clientAuth) | `client_wrong.pem` (serverAuth) | :x: **Unsuitable certificate purpose** | Server EKU wrong — rejected before client is checked |
+| `server_wrong.pem` (clientAuth) | `client_noeku.pem` (no EKU) | :x: **Unsuitable certificate purpose** | Server EKU wrong — rejected before client is checked |
+| `server_noeku.pem` (no EKU) | `client_good.pem` (clientAuth) | :white_check_mark: **mTLS OK** | No server EKU = unrestricted, client EKU correct |
+| `server_noeku.pem` (no EKU) | `client_wrong.pem` (serverAuth) | :x: **400 Bad Request** | Server OK (no EKU), but NGINX rejects client (wrong EKU) |
+| `server_noeku.pem` (no EKU) | `client_noeku.pem` (no EKU) | :white_check_mark: **mTLS OK** | Both have no EKU = both unrestricted |
 
 ---
 
